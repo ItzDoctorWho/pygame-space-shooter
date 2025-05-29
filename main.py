@@ -1,0 +1,554 @@
+# Cosmic Clash - Main Game File
+
+import pygame
+import sys
+import random
+import time
+import math
+from settings import *
+from sprites import Player, Enemy, Bullet, PowerUp, Boss, EnemyBullet
+from levels import LEVELS
+from explosion import Explosion # Assuming explosion.py is the file name
+
+class Game:
+    def __init__(self):
+        pygame.init()
+        # pygame.mixer.init() # Initialize sound later
+        # Set standard windowed mode with fixed size
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        pygame.display.set_caption(TITLE)
+        self.clock = pygame.time.Clock()
+        self.running = True
+        self.font_name = pygame.font.match_font(FONT_NAME)
+        self.load_data()
+        self.game_state = "START_SCREEN"
+        self.current_level = 1
+        self.score = 0
+        self.difficulty = "Medium" # Default difficulty
+        self.difficulty_multipliers = DIFFICULTY_LEVELS[self.difficulty]
+        self.playing = False
+        self.selected_level = 1
+        self.max_level = max(LEVELS.keys())
+        self.difficulty_options = list(DIFFICULTY_LEVELS.keys())
+        self.selected_difficulty_index = self.difficulty_options.index(self.difficulty)
+
+        # Timers for automatic difficulty adjustments and player power increase
+        self.last_power_increase_time = pygame.time.get_ticks()
+        self.power_increase_interval = 30000 # 30 seconds in milliseconds
+        self.last_obstacle_difficulty_increase_time = pygame.time.get_ticks()
+        self.obstacle_difficulty_increase_interval = 20000 # 20 seconds in milliseconds
+        self.time_based_difficulty_multiplier = 1.0 # Starts at 1.0, increases over time
+
+    def load_data(self):
+        # Load assets here later
+        pass
+
+    def set_difficulty(self, difficulty_level):
+        if difficulty_level in DIFFICULTY_LEVELS:
+            self.difficulty = difficulty_level
+            self.difficulty_multipliers = DIFFICULTY_LEVELS[self.difficulty]
+            print(f"Difficulty set to: {self.difficulty}")
+            self.selected_difficulty_index = self.difficulty_options.index(self.difficulty) # Update index
+        else:
+            print(f"Warning: Invalid difficulty ", difficulty_level, ". Keeping ", self.difficulty)
+
+    def new(self):
+        # Start or restart a game
+        self.score = 0
+        self.current_level = self.selected_level
+        self.all_sprites = pygame.sprite.Group()
+        self.enemies = pygame.sprite.Group()
+        self.bullets = pygame.sprite.Group()
+        self.enemy_bullets = pygame.sprite.Group()
+        self.powerups = pygame.sprite.Group()
+        self.boss_group = pygame.sprite.GroupSingle()
+        self.player = Player(self) # Player adds itself
+        # In endless mode, we don't start a specific level, just begin spawning
+        self.start_endless_spawning()
+        self.run()
+
+    def start_endless_spawning(self):
+        print("Starting Endless Mode Spawning")
+        self.current_level = 1 # Still display level 1 initially, or change to a different indicator
+        self.enemies_killed_this_level = 0 # Still track kills if needed for score/stats
+        self.game_state = "PLAYING"
+
+        # Initialize spawning parameters for endless mode
+        self.last_spawn_time = pygame.time.get_ticks()
+        self.base_spawn_delay = 1000 # Base delay in ms (adjust as needed)
+        self.enemy_types_available = ["basic", "shooter", "zigzag"] # Types to spawn
+        # Add more enemy types to this list as they are created
+
+        # Clear sprites from previous game (if restarting)
+        for sprite in self.all_sprites:
+            if sprite != self.player: # Keep player sprite
+                sprite.kill()
+        self.enemies.empty()
+        self.bullets.empty()
+        self.enemy_bullets.empty()
+        self.powerups.empty()
+        self.boss_group.empty()
+
+        self.player.rect.centerx = WIDTH / 2
+        self.player.rect.bottom = HEIGHT - 10
+        self.player.hidden = False
+
+    def run(self):
+        self.playing = True
+        while self.playing:
+            self.dt = self.clock.tick(FPS) / 1000.0
+            self.events()
+            self.update()
+            self.draw()
+
+    def update(self):
+        self.all_sprites.update()
+
+        if self.game_state == "PLAYING":
+            self.manage_waves()
+
+        self.check_collisions()
+
+        if self.player.lives <= 0 and not self.player.hidden:
+             self.game_state = "GAME_OVER"
+             self.playing = False
+
+        # Check for automatic player power increase
+        now = pygame.time.get_ticks()
+        if self.game_state == "PLAYING" or self.game_state == "BOSS_FIGHT":
+            if now - self.last_power_increase_time > self.power_increase_interval:
+                self.player.collect_powerup() # Reuse powerup logic for stat increase
+                self.last_power_increase_time = now
+                print("Player power increased automatically!")
+
+            # Check for automatic obstacle difficulty increase
+            if now - self.last_obstacle_difficulty_increase_time > self.obstacle_difficulty_increase_interval:
+                self.time_based_difficulty_multiplier += 0.1 # Increase multiplier by 0.1
+                self.last_obstacle_difficulty_increase_time = now
+                print(f"Obstacle difficulty increased! Multiplier: {self.time_based_difficulty_multiplier:.2f}")
+
+    def manage_waves(self):
+        now = pygame.time.get_ticks()
+        # Endless spawning logic
+        # Calculate adjusted spawn delay based on base delay and time multiplier
+        adjusted_spawn_delay = self.base_spawn_delay / self.time_based_difficulty_multiplier
+        # Ensure a minimum spawn delay
+        adjusted_spawn_delay = max(adjusted_spawn_delay, 150) # Minimum 150ms delay (adjust as needed)
+
+        # Check if it's time to spawn a new enemy
+        if now - self.last_spawn_time > adjusted_spawn_delay:
+            self.last_spawn_time = now
+
+            # Randomly select an enemy type from available types
+            enemy_type = random.choice(self.enemy_types_available)
+
+            # Determine spawn pattern (can make this more complex later)
+            # For now, let's use a simple top_random pattern
+            pattern = "top_random"
+
+            self.spawn_enemy(enemy_type, pattern)
+
+    def check_collisions(self):
+        # Player Bullets hitting enemies
+        hits_bullet_enemy = pygame.sprite.groupcollide(self.enemies, self.bullets, True, True)
+        for enemy_hit in hits_bullet_enemy:
+            self.score += 10
+            self.enemies_killed_this_level += 1
+            # Apply difficulty multiplier to powerup drop chance
+            if random.random() < (POWERUP_DROP_CHANCE * self.difficulty_multipliers["powerup_drop_mult"]):
+                PowerUp(self, enemy_hit.rect.center)
+
+        # Player Bullets hitting boss
+        if self.game_state == "BOSS_FIGHT" and self.boss_group.sprite:
+            hits_bullet_boss = pygame.sprite.spritecollide(self.boss_group.sprite, self.bullets, True)
+            for hit in hits_bullet_boss:
+                boss_defeated = self.boss_group.sprite.take_damage(1)
+                self.score += 5
+                if boss_defeated:
+                    self.score += 500 * self.current_level
+                    self.level_complete()
+
+        # Player hitting enemies or boss
+        if not self.player.hidden:
+            hits_player_enemy = pygame.sprite.spritecollide(self.player, self.enemies, True)
+            hits_player_boss = pygame.sprite.spritecollide(self.player, self.boss_group, False)
+            if hits_player_enemy or hits_player_boss:
+                self.player_death()
+
+            # Player hitting enemy bullets
+            hits_player_enemybullet = pygame.sprite.spritecollide(self.player, self.enemy_bullets, True)
+            if hits_player_enemybullet:
+                self.player_death()
+
+        # Player collecting power-ups
+        if not self.player.hidden:
+            hits_player_powerup = pygame.sprite.spritecollide(self.player, self.powerups, True)
+            for hit in hits_player_powerup:
+                self.player.collect_powerup()
+
+    def events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                if self.playing:
+                    self.playing = False
+                self.running = False
+            if event.type == pygame.KEYDOWN:
+                 if self.game_state == "PLAYING" or self.game_state == "BOSS_FIGHT":
+                     if event.key == pygame.K_SPACE:
+                         self.player.shoot()
+                 elif self.game_state == "START_SCREEN":
+                     # Difficulty Selection on Start Screen
+                     if event.key == pygame.K_ESCAPE:
+                         self.running = False
+                         self.playing = False
+                     elif event.key in [pygame.K_LEFT, pygame.K_a]:
+                         self.selected_level = max(1, self.selected_level - 1)
+                     elif event.key in [pygame.K_RIGHT, pygame.K_d]:
+                         self.selected_level = min(self.max_level, self.selected_level + 1)
+                     elif event.key == pygame.K_RETURN:
+                         self.playing = False
+                 elif self.game_state == "GAME_OVER":
+                     if event.key == pygame.K_ESCAPE:
+                         self.running = False
+                         self.playing = False
+                     else:
+                         # Any other key restarts
+                         self.playing = False # Exit game over screen loop
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Left click
+                    mouse_pos = pygame.mouse.get_pos()
+                    # Check if click is on level selection area
+                    if HEIGHT / 2 + 100 <= mouse_pos[1] <= HEIGHT / 2 + 140:
+                        if WIDTH / 2 - 100 <= mouse_pos[0] <= WIDTH / 2 + 100:
+                            self.playing = False
+
+    def draw(self):
+        # Starfield background
+        self.screen.fill((10, 10, 30))
+        for i in range(60):
+            x = math.sin(i) * 400 + WIDTH // 2
+            y = (i * 53) % HEIGHT
+            pygame.draw.circle(self.screen, (200, 200, 255), (int(x), int(y)), 1)
+        self.all_sprites.draw(self.screen)
+        # Draw UI background rectangles
+        pygame.draw.rect(self.screen, (0,0,0,180), (WIDTH/2-90, 5, 180, 36), border_radius=8)
+        pygame.draw.rect(self.screen, (0,0,0,180), (10, 5, 120, 60), border_radius=8)
+        pygame.draw.rect(self.screen, (0,0,0,180), (WIDTH-140, 5, 130, 60), border_radius=8)
+        # Score (center top, big)
+        self.draw_text(f"Score: {self.score}", 28, YELLOW, WIDTH / 2, 10)
+        # Level (top right)
+        self.draw_text(f"Level: {self.current_level}", 22, WHITE, WIDTH - 75, 10)
+        # Lives (top left)
+        self.draw_text(f"Lives: {self.player.lives}", 22, GREEN, 70, 10)
+        # Power (top left, below lives)
+        self.draw_text(f"Power: {self.player.power_level}", 18, BLUE, 70, 35)
+        # Difficulty (top right, below level)
+        self.draw_text(f"Difficulty: {self.difficulty}", 18, RED if self.difficulty=="Hard" else (YELLOW if self.difficulty=="Medium" else GREEN), WIDTH - 75, 35)
+        # Boss health bar
+        if self.game_state == "BOSS_FIGHT" and self.boss_group.sprite:
+            boss = self.boss_group.sprite
+            BAR_LENGTH = 200
+            BAR_HEIGHT = 18
+            fill_pct = max(0, boss.health / boss.max_health)
+            fill = fill_pct * BAR_LENGTH
+            outline_rect = pygame.Rect(WIDTH / 2 - BAR_LENGTH / 2, 60, BAR_LENGTH, BAR_HEIGHT)
+            fill_rect = pygame.Rect(WIDTH / 2 - BAR_LENGTH / 2, 60, fill, BAR_HEIGHT)
+            pygame.draw.rect(self.screen, RED, fill_rect)
+            pygame.draw.rect(self.screen, WHITE, outline_rect, 2)
+        pygame.display.flip()
+
+    def show_start_screen(self):
+        self.game_state = "START_SCREEN"
+        selecting_level = True
+        # self.selected_level = 1 # Keep the previously selected level
+        self.screen.fill(BLACK)
+
+        # Card dimensions and position
+        card_width = 600
+        card_height = 500
+        card_x = (WIDTH - card_width) // 2
+        card_y = (HEIGHT - card_height) // 2 + 50 # Shift slightly down from center
+        card_rect = pygame.Rect(card_x, card_y, card_width, card_height)
+        card_color = (20, 20, 40) # Darker blue/purple for the card
+        border_color = (80, 80, 100)
+        border_radius = 20
+
+        # Difficulty button positions (adjusting for the card)
+        button_y = card_y + card_height * 0.6
+        button_spacing = 10
+        button_width = 100
+        button_height = 40
+        easy_button_x = card_x + card_width / 2 - button_width * 1.5 - button_spacing
+        medium_button_x = card_x + card_width / 2 - button_width / 2
+        hard_button_x = card_x + card_width / 2 + button_width * 0.5 + button_spacing
+
+        # Level selection position
+        level_select_y = button_y + button_height + 40
+
+        while selecting_level and self.running:
+            # Starfield background animation
+            self.screen.fill((10, 10, 30))  # Dark blue background
+            now = pygame.time.get_ticks()
+            for i in range(60):
+                # Modify star positions based on time for animation
+                x = math.sin(i + now * 0.001) * 400 + WIDTH // 2
+                y = ((i * 53) + now * 0.05) % HEIGHT # Move stars downwards slowly
+                pygame.draw.circle(self.screen, (200, 200, 255), (int(x), int(y)), 1)
+
+            # Draw the card background with rounded corners and border
+            pygame.draw.rect(self.screen, border_color, card_rect, border_radius=border_radius)
+            pygame.draw.rect(self.screen, card_color, card_rect.inflate(-4, -4), border_radius=border_radius - 2)
+
+            # Draw title outside the card
+            # Pulsating Title Animation
+            pulse_scale = 1.0 + math.sin(now * 0.002) * 0.05 # Pulsates between 1.0 and 1.05
+            title_size = int(64 * pulse_scale)
+            # Ensure title size doesn't go below a minimum to avoid visual glitches if pulse_scale becomes small
+            title_size = max(title_size, 56) # Minimum font size
+            # Recalculate text surface for animated size - might need to adjust text drawing logic
+            font = pygame.font.Font(self.font_name, title_size)
+            text_surface = font.render("COSMIC CLASH", True, (100, 150, 255))
+            text_rect = text_surface.get_rect(center=(WIDTH / 2, HEIGHT / 10))
+            self.screen.blit(text_surface, text_rect)
+
+            # Draw text inside the card
+            self.draw_text("Welcome to Cosmic Clash", 36, (150, 180, 255), WIDTH / 2, card_y + 40) # Lighter blue/purple
+            self.draw_text("A space shooter with power-ups, levels, and boss fights!", 22, WHITE, WIDTH / 2, card_y + 90)
+
+            # Controls section
+            controls_box_y = card_y + 140
+            controls_box_height = 60
+            pygame.draw.rect(self.screen, (30, 30, 50), (card_x + 20, controls_box_y, card_width - 40, controls_box_height), border_radius=10)
+            self.draw_text("Controls", 20, WHITE, WIDTH / 2, controls_box_y + 10)
+            self.draw_text("WASD or Arrow keys to move, SPACE to shoot", 24, WHITE, WIDTH / 2, controls_box_y + 35)
+
+            # Difficulty selection text
+            self.draw_text("Select Difficulty", 24, WHITE, WIDTH / 2, button_y - 30)
+
+            # Draw difficulty buttons (can be clickable later)
+            easy_button_rect = pygame.Rect(easy_button_x, button_y, button_width, button_height)
+            medium_button_rect = pygame.Rect(medium_button_x, button_y, button_width, button_height)
+            hard_button_rect = pygame.Rect(hard_button_x, button_y, button_width, button_height)
+
+            # Highlight the selected difficulty
+            easy_color = GREEN if self.difficulty == "Easy" else (34, 139, 34) # Darker green when not selected
+            medium_color = YELLOW if self.difficulty == "Medium" else (218, 165, 32) # Darker yellow/orange
+            hard_color = RED if self.difficulty == "Hard" else (139, 0, 0) # Darker red
+
+            # Hover and Selection Animation for Difficulty Buttons
+            mouse_pos = pygame.mouse.get_pos()
+            hover_scale_factor = 1.1 # Scale up by 10% on hover/select
+
+            easy_draw_rect = easy_button_rect.copy()
+            medium_draw_rect = medium_button_rect.copy()
+            hard_draw_rect = hard_button_rect.copy()
+
+            # Check for hover or selection
+            if easy_button_rect.collidepoint(mouse_pos) or self.difficulty == "Easy":
+                easy_draw_rect.width *= hover_scale_factor
+                easy_draw_rect.height *= hover_scale_factor
+                easy_draw_rect.center = easy_button_rect.center
+                easy_color = GREEN # Keep bright color on hover/select
+            if medium_button_rect.collidepoint(mouse_pos) or self.difficulty == "Medium":
+                medium_draw_rect.width *= hover_scale_factor
+                medium_draw_rect.height *= hover_scale_factor
+                medium_draw_rect.center = medium_button_rect.center
+                medium_color = YELLOW # Keep bright color on hover/select
+            if hard_button_rect.collidepoint(mouse_pos) or self.difficulty == "Hard":
+                hard_draw_rect.width *= hover_scale_factor
+                hard_draw_rect.height *= hover_scale_factor
+                hard_draw_rect.center = hard_button_rect.center
+                hard_color = RED # Keep bright color on hover/select
+
+            pygame.draw.rect(self.screen, easy_color, easy_draw_rect, border_radius=8)
+            pygame.draw.rect(self.screen, medium_color, medium_draw_rect, border_radius=8)
+            pygame.draw.rect(self.screen, hard_color, hard_draw_rect, border_radius=8)
+
+            # Adjust text position slightly for scaled buttons
+            self.draw_text("Easy", 20, BLACK, easy_draw_rect.centerx, easy_draw_rect.centery - 10)
+            self.draw_text("Medium", 20, BLACK, medium_draw_rect.centerx, medium_draw_rect.centery - 10)
+            self.draw_text("Hard", 20, BLACK, hard_draw_rect.centerx, hard_draw_rect.centery - 10)
+
+            # Level selection text and display
+            level_text = f"Select Level: {self.selected_level}"
+            level_text_size = 28
+            level_text_color = WHITE
+
+            level_rect_approx = pygame.Rect(WIDTH / 2 - 150, level_select_y - 10, 300, 60) # Approximate clickable area
+
+            # Pulsate the level text slightly
+            pulse_scale_level = 1.0 + math.sin(now * 0.003) * 0.03 # Slower pulsation
+            animated_level_size = int(level_text_size * pulse_scale_level)
+            animated_level_size = max(animated_level_size, 24) # Minimum font size
+
+            # Change color on hover
+            if level_rect_approx.collidepoint(mouse_pos):
+                 level_text_color = YELLOW # Highlight color on hover
+
+            font_level = pygame.font.Font(self.font_name, animated_level_size)
+            text_surface_level = font_level.render(level_text, True, level_text_color)
+            text_rect_level = text_surface_level.get_rect(center=(WIDTH / 2, level_select_y))
+            self.screen.blit(text_surface_level, text_rect_level)
+
+            self.draw_text("Use LEFT/RIGHT or A/D to change level", 18, WHITE, WIDTH / 2, level_select_y + 30)
+            self.draw_text("Click on the level number to start", 20, WHITE, WIDTH / 2, level_select_y + 70) # Adjusted text
+
+            self.draw_text("Press ESC to Quit", 18, WHITE, WIDTH / 2, HEIGHT - 30) # Positioned lower down
+
+            pygame.display.flip()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    selecting_level = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        self.running = False
+                        selecting_level = False
+                    # Arrow key navigation for difficulty
+                    elif event.key == pygame.K_UP:
+                        self.selected_difficulty_index = (self.selected_difficulty_index - 1) % len(self.difficulty_options)
+                        self.set_difficulty(self.difficulty_options[self.selected_difficulty_index])
+                    elif event.key == pygame.K_DOWN:
+                        self.selected_difficulty_index = (self.selected_difficulty_index + 1) % len(self.difficulty_options)
+                        self.set_difficulty(self.difficulty_options[self.selected_difficulty_index])
+                    # Level selection handled by LEFT/RIGHT or A/D
+                    elif event.key in [pygame.K_LEFT, pygame.K_a]:
+                        self.selected_level = max(1, self.selected_level - 1)
+                    elif event.key in [pygame.K_RIGHT, pygame.K_d]:
+                        self.selected_level = min(self.max_level, self.selected_level + 1)
+                    # Select difficulty/start game with ENTER
+                    elif event.key == pygame.K_RETURN:
+                        selecting_level = False
+                        self.playing = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left click
+                        mouse_pos = event.pos
+                        # Check if click is on a difficulty button
+                        if easy_draw_rect.collidepoint(mouse_pos):
+                            self.set_difficulty("Easy")
+                            selecting_level = False
+                            self.playing = False
+                        elif medium_draw_rect.collidepoint(mouse_pos):
+                            self.set_difficulty("Medium")
+                            selecting_level = False
+                            self.playing = False
+                        elif hard_draw_rect.collidepoint(mouse_pos):
+                            self.set_difficulty("Hard")
+                            selecting_level = False
+                            self.playing = False
+                        # Check if click is on level selection area (approximate area around text)
+                        elif level_select_y - 10 <= mouse_pos[1] <= level_select_y + 50:
+                             if WIDTH / 2 - 150 <= mouse_pos[0] <= WIDTH / 2 + 150: # Wider area around level text
+                                 selecting_level = False
+                                 self.playing = False
+            self.clock.tick(FPS / 2)  # Slow down the loop to avoid high CPU usage
+
+    def show_game_over_screen(self):
+        if not self.running:
+            return
+        self.game_state = "GAME_OVER"
+        self.screen.fill(BLACK)
+        self.draw_text("GAME OVER", 48, WHITE, WIDTH / 2, HEIGHT / 4)
+        self.draw_text(f"Final Score: {self.score}", 22, WHITE, WIDTH / 2, HEIGHT / 2)
+        self.draw_text("Press any key to play again (ESC to Quit)", 22, WHITE, WIDTH / 2, HEIGHT * 3 / 4)
+        pygame.display.flip()
+        self.wait_for_key_or_quit()
+
+    def wait_for_key_or_quit(self):
+        # This loop now primarily handles waiting in start/game over screens
+        # Key handling for these states is done in self.events()
+        waiting = True
+        while waiting and self.running:
+            self.clock.tick(FPS / 2)
+            # Process events to check for key presses or quit
+            self.events()
+            # If playing is set to False by event handler, exit wait loop
+            if not self.playing:
+                 waiting = False
+
+    def draw_text(self, text, size, color, x, y):
+        font = pygame.font.Font(self.font_name, size)
+        text_surface = font.render(text, True, color)
+        text_rect = text_surface.get_rect()
+        text_rect.midtop = (x, y)
+        self.screen.blit(text_surface, text_rect)
+
+    def spawn_enemy(self, enemy_type, pattern):
+        if pattern == "top_random":
+            x = random.randrange(ENEMY_WIDTH, WIDTH - ENEMY_WIDTH)
+            y = random.randrange(-150, -100)
+        elif pattern == "top_sides":
+             x = random.choice([random.randrange(ENEMY_WIDTH, WIDTH // 4), random.randrange(WIDTH * 3 // 4, WIDTH - ENEMY_WIDTH)])
+             y = random.randrange(-150, -100)
+        elif pattern == "top_center_spread":
+             x = WIDTH / 2 + random.randrange(-50, 50)
+             y = random.randrange(-100, -80)
+        else:
+            x = random.randrange(ENEMY_WIDTH, WIDTH - ENEMY_WIDTH)
+            y = random.randrange(-150, -100)
+        Enemy(self, x, y, enemy_type)
+
+    def start_boss_fight(self):
+        boss_type = self.level_data.get("boss_type", "level1_boss")
+        print(f"Starting Boss Fight: {boss_type} for Level {self.current_level}")
+        self.game_state = "BOSS_FIGHT"
+        Boss(self, self.current_level, boss_type)
+
+    def level_complete(self):
+        print(f"Level {self.current_level} Complete!")
+        self.current_level += 1
+        for bullet in self.bullets:
+            bullet.kill()
+        for e_bullet in self.enemy_bullets:
+            e_bullet.kill()
+        for powerup in self.powerups:
+            powerup.kill()
+
+        if self.current_level > len(LEVELS):
+            print("Congratulations! You beat the game!")
+            self.game_state = "GAME_OVER"
+            self.playing = False
+        else:
+            self.start_endless_spawning()
+
+    def player_death(self):
+        if self.player.lives > 0:
+            self.player.lives -= 1
+            # Create an explosion at the player's position
+            explosion = Explosion(self, self.player.rect.center) # Pass game instance and position
+            self.all_sprites.add(explosion)
+            # Hide the player and reset position, will respawn after a delay (handled in Player class update)
+            self.player.hide()
+            self.player.power_level = 0
+            self.player.powerup_timers = []
+            print(f"Player died! Lives remaining: {self.player.lives}")
+            for bullet in self.enemy_bullets:
+                bullet.kill()
+        else:
+            # If no lives left, transition to game over state after a brief delay for explosion
+            explosion = Explosion(self, self.player.rect.center)
+            self.all_sprites.add(explosion)
+            # Small delay to show explosion before game over screen
+            pygame.time.delay(500) # Adjust delay as needed
+            self.player.hide()
+            self.game_state = "GAME_OVER"
+            self.playing = False
+
+# --- Main Execution ---
+g = Game()
+while g.running:
+    g.show_start_screen()
+    if not g.running: break
+    # Reset player state for new game after game over
+    if g.game_state == "GAME_OVER":
+        g.player.lives = PLAYER_LIVES
+        g.player.power_level = 0
+        g.player.powerup_timers = []
+        g.player.hidden = False
+    g.new() # Starts a new game loop
+    if not g.running: break
+    g.show_game_over_screen()
+
+pygame.quit()
+sys.exit()
+
