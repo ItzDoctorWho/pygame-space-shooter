@@ -40,9 +40,133 @@ class Game:
         self.time_based_difficulty_multiplier = 1.0 # Starts at 1.0, increases over time
 
     def load_data(self):
-        # Load assets here later
-        pass
-
+        import os
+        self.assets = {}
+        asset_dir = "assets"
+        
+        # Ensure the assets directory exists
+        if not os.path.exists(asset_dir):
+            print(f"Error: Assets directory '{asset_dir}' does not exist.")
+            return
+        
+        # Define asset mappings
+        asset_files = {
+            "player": "player.png",
+            "enemy_basic": "enemy_basic.png",
+            "enemy_zigzag": "enemy_zigzag.png",
+            "enemy_shooter": "enemy_shooter.png",
+            "boss_level1": "boss_level1.png",
+            "boss_level2": "boss_level2.png",
+            "boss_level3": "boss_level3.png",
+            "boss_level4": "boss_level4.png",
+            "boss_level5": "boss_level5.png",
+            "boss_final": "boss_final.png",
+            "bullet_player": "bullet_player.png",
+            "bullet_enemy": "bullet_enemy.png",
+            "powerup": "powerup.png",
+            "explosion_frames": [
+                "explosion_1.png",
+                "explosion_2.png",
+                "explosion_3.png",
+                "explosion_4.png",
+                "explosion_5.png",
+                "explosion_6.png",
+                "explosion_7.png",
+                "explosion_8.png"
+            ]
+        }
+        
+        # Scaling factor for larger sprites
+        SCALE_FACTOR = 1.5
+        
+        # Load images with error handling
+        for key, filename in asset_files.items():
+            if key == "explosion_frames":
+                self.assets[key] = []
+                for frame_file in filename:
+                    try:
+                        path = os.path.join(asset_dir, frame_file)
+                        if not os.path.exists(path):
+                            print(f"Error: File '{path}' does not exist.")
+                            raise FileNotFoundError
+                        img = pygame.image.load(path).convert_alpha()
+                        # Scale explosion frames to match original sizes (30x30 to 100x100)
+                        size = 30 + (len(self.assets[key]) * 10)
+                        img = pygame.transform.scale(img, (int(size), int(size)))
+                        self.assets[key].append(img)
+                    except (pygame.error, FileNotFoundError) as e:
+                        print(f"Warning: Could not load {path}. Using placeholder.")
+                        size = 30 + (len(self.assets[key]) * 10)
+                        surface = pygame.Surface([size, size], pygame.SRCALPHA)
+                        color_index = len(self.assets[key]) % len([(255, 0, 0), (255, 165, 0), (255, 255, 0), (255, 255, 255)])
+                        pygame.draw.circle(surface, [(255, 0, 0), (255, 165, 0), (255, 255, 0), (255, 255, 255)][color_index],
+                                        (size // 2, size // 2), size // 2 - 5)
+                        self.assets[key].append(surface)
+            else:
+                try:
+                    path = os.path.join(asset_dir, filename)
+                    if not os.path.exists(path):
+                        print(f"Error: File '{path}' does not exist.")
+                        raise FileNotFoundError
+                    img = pygame.image.load(path).convert_alpha()
+                    # Scale images to match settings.py sizes with scaling factor
+                    if key == "player":
+                        img = pygame.transform.scale(img, (int(PLAYER_WIDTH * SCALE_FACTOR), int(PLAYER_HEIGHT * SCALE_FACTOR)))
+                    elif key.startswith("enemy"):
+                        img = pygame.transform.scale(img, (int(ENEMY_WIDTH * SCALE_FACTOR), int(ENEMY_HEIGHT * SCALE_FACTOR)))
+                    elif key.startswith("boss"):
+                        img = pygame.transform.scale(img, (int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)))
+                    elif key == "bullet_player":
+                        img = pygame.transform.scale(img, (int(BULLET_WIDTH * SCALE_FACTOR), int(BULLET_HEIGHT * SCALE_FACTOR)))
+                    elif key == "bullet_enemy":
+                        img = pygame.transform.scale(img, (int(BULLET_WIDTH * SCALE_FACTOR), int(BULLET_HEIGHT * 1.5 * SCALE_FACTOR)))
+                    elif key == "powerup":
+                        img = pygame.transform.scale(img, (POWERUP_WIDTH, POWERUP_HEIGHT))  # Unchanged size
+                    self.assets[key] = img
+                except (pygame.error, FileNotFoundError) as e:
+                    print(f"Warning: Could not load {path}. Using placeholder surface.")
+                    # Fallback to colored surfaces with scaled sizes
+                    if key == "player":
+                        surface = pygame.Surface([int(PLAYER_WIDTH * SCALE_FACTOR), int(PLAYER_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(BLUE)
+                    elif key == "enemy_basic":
+                        surface = pygame.Surface([int(ENEMY_WIDTH * SCALE_FACTOR), int(ENEMY_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(GREEN)
+                    elif key == "enemy_zigzag":
+                        surface = pygame.Surface([int(ENEMY_WIDTH * SCALE_FACTOR), int(ENEMY_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(TEAL)
+                    elif key == "enemy_shooter":
+                        surface = pygame.Surface([int(ENEMY_WIDTH * SCALE_FACTOR), int(ENEMY_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(BROWN)
+                    elif key == "boss_level1":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(ORANGE)
+                    elif key == "boss_level2":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(PURPLE)
+                    elif key == "boss_level3":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(RED)
+                    elif key == "boss_level4":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(WHITE)
+                    elif key == "boss_level5":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(BLUE)
+                    elif key == "boss_final":
+                        surface = pygame.Surface([int(BOSS_WIDTH * SCALE_FACTOR), int(BOSS_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(GREY)
+                    elif key == "bullet_player":
+                        surface = pygame.Surface([int(BULLET_WIDTH * SCALE_FACTOR), int(BULLET_HEIGHT * SCALE_FACTOR)])
+                        surface.fill(RED)
+                    elif key == "bullet_enemy":
+                        surface = pygame.Surface([int(BULLET_WIDTH * SCALE_FACTOR), int(BULLET_HEIGHT * 1.5 * SCALE_FACTOR)])
+                        surface.fill(YELLOW)
+                    elif key == "powerup":
+                        surface = pygame.Surface([POWERUP_WIDTH, POWERUP_HEIGHT])
+                        surface.fill(YELLOW)
+                    self.assets[key] = surface        
+                           
     def set_difficulty(self, difficulty_level):
         if difficulty_level in DIFFICULTY_LEVELS:
             self.difficulty = difficulty_level
@@ -193,35 +317,34 @@ class Game:
                     self.playing = False
                 self.running = False
             if event.type == pygame.KEYDOWN:
-                 if self.game_state == "PLAYING" or self.game_state == "BOSS_FIGHT":
-                     if event.key == pygame.K_SPACE:
-                         self.player.shoot()
-                 elif self.game_state == "START_SCREEN":
-                     # Difficulty Selection on Start Screen
-                     if event.key == pygame.K_ESCAPE:
-                         self.running = False
-                         self.playing = False
-                     elif event.key in [pygame.K_LEFT, pygame.K_a]:
-                         self.selected_level = max(1, self.selected_level - 1)
-                     elif event.key in [pygame.K_RIGHT, pygame.K_d]:
-                         self.selected_level = min(self.max_level, self.selected_level + 1)
-                     elif event.key == pygame.K_RETURN:
-                         self.playing = False
-                 elif self.game_state == "GAME_OVER":
-                     if event.key == pygame.K_ESCAPE:
-                         self.running = False
-                         self.playing = False
-                     else:
-                         # Any other key restarts
-                         self.playing = False # Exit game over screen loop
+                if self.game_state == "START_SCREEN":
+                    if event.key == pygame.K_ESCAPE:
+                        self.running = False
+                        self.playing = False
+                    elif event.key in [pygame.K_LEFT, pygame.K_a]:
+                        self.selected_level = max(1, self.selected_level - 1)
+                    elif event.key in [pygame.K_RIGHT, pygame.K_d]:
+                        self.selected_level = min(self.max_level, self.selected_level + 1)
+                    elif event.key == pygame.K_RETURN:
+                        self.playing = False
+                    elif event.key == pygame.K_UP:
+                        self.selected_difficulty_index = (self.selected_difficulty_index - 1) % len(self.difficulty_options)
+                        self.set_difficulty(self.difficulty_options[self.selected_difficulty_index])
+                    elif event.key == pygame.K_DOWN:
+                        self.selected_difficulty_index = (self.selected_difficulty_index + 1) % len(self.difficulty_options)
+                        self.set_difficulty(self.difficulty_options[self.selected_difficulty_index])
+                elif self.game_state == "GAME_OVER":
+                    if event.key == pygame.K_ESCAPE:
+                        self.running = False
+                        self.playing = False
+                    else:
+                        self.playing = False
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
                     mouse_pos = pygame.mouse.get_pos()
-                    # Check if click is on level selection area
                     if HEIGHT / 2 + 100 <= mouse_pos[1] <= HEIGHT / 2 + 140:
                         if WIDTH / 2 - 100 <= mouse_pos[0] <= WIDTH / 2 + 100:
                             self.playing = False
-
     def draw(self):
         # Starfield background
         self.screen.fill((10, 10, 30))
