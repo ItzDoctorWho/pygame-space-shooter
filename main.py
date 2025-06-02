@@ -8,7 +8,7 @@ import math
 from settings import *
 from sprites import Player, Enemy, Bullet, PowerUp, Boss, EnemyBullet
 from levels import LEVELS
-from explosion import Explosion # Assuming explosion.py is the file name
+from explosion import Explosion
 
 class Background:
     def __init__(self, game):
@@ -58,7 +58,7 @@ class Background:
 class Game:
     def __init__(self):
         pygame.init()
-        # pygame.mixer.init() # Initialize sound later
+        pygame.mixer.init()  # Initialize sound
         # Set standard windowed mode with fixed size
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
         pygame.display.set_caption(TITLE)
@@ -77,6 +77,13 @@ class Game:
         self.max_level = max(LEVELS.keys())
         self.difficulty_options = list(DIFFICULTY_LEVELS.keys())
         self.selected_difficulty_index = self.difficulty_options.index(self.difficulty)
+        
+        # Load background music
+        try:
+            pygame.mixer.music.load("assets/audio.wav")
+            pygame.mixer.music.set_volume(0.5)  # Set volume to 50%
+        except:
+            print("Could not load background music")
 
         # Timers for automatic difficulty adjustments and player power increase
         self.last_power_increase_time = pygame.time.get_ticks()
@@ -237,6 +244,10 @@ class Game:
         self.current_wave = 0
         self.enemies_killed_this_level = 0
         self.game_state = "PLAYING"
+        
+        # Start playing background music
+        pygame.mixer.music.play(-1)  # -1 means loop indefinitely
+        
         self.run()
 
     def run(self):
@@ -683,6 +694,8 @@ class Game:
         if not self.running:
             return
         self.game_state = "GAME_OVER"
+        # Stop background music
+        pygame.mixer.music.stop()
         self.screen.fill(BLACK)
         self.draw_text("GAME OVER", 48, WHITE, WIDTH / 2, HEIGHT / 4)
         self.draw_text(f"Final Score: {self.score}", 22, WHITE, WIDTH / 2, HEIGHT / 2)

@@ -44,17 +44,17 @@ class Player(pygame.sprite.Sprite):
         keystate = pygame.key.get_pressed()
         
         # Debug: Check if keys are pressed and speeds are set
-        if keystate[pygame.K_a]:
-            print("Key A pressed")
+        if keystate[pygame.K_LEFT]:
+            print("Key LEFT pressed")
             self.speed_x = -3
-        if keystate[pygame.K_d]:
-            print("Key D pressed")
+        if keystate[pygame.K_RIGHT]:
+            print("Key RIGHT pressed")
             self.speed_x = 3
-        if keystate[pygame.K_w]:
-            print("Key W pressed")
+        if keystate[pygame.K_UP]:
+            print("Key UP pressed")
             self.speed_y = -3
-        if keystate[pygame.K_s]:
-            print("Key S pressed")
+        if keystate[pygame.K_DOWN]:
+            print("Key DOWN pressed")
             self.speed_y = 3
 
         # Normalize diagonal movement
